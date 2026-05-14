@@ -6,5 +6,9 @@ export {
   HighTtfbAnalyzer,
   MissingCacheHeadersAnalyzer,
   RedirectChainsAnalyzer,
+  LargeBundleAnalyzer,
+  NoEtagAnalyzer,
+  SerialRequestsAnalyzer,
+  RenderBlockingAnalyzer,
   ThirdPartyAnalyzer,
 } from './checks.js';

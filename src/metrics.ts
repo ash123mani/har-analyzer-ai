@@ -10,6 +10,7 @@ function stats(arr: number[]) {
   };
 }
 
+/** Aggregates timing and size statistics from analyzed HAR entries */
 export class MetricsComputer implements IMetricsComputer {
   compute(
     entries: AnalyzedEntry[],

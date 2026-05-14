@@ -8,25 +8,45 @@ Parse, analyze, and explain HAR files. Detects performance bottlenecks and gener
 npx tsx src/cli.ts path/to/file.har
 ```
 
-For machine-readable output:
+Machine-readable JSON:
 
 ```bash
 npx tsx src/cli.ts path/to/file.har --json
+```
+
+AI-powered analysis:
+
+```bash
+HAR_ANALYZER_API_KEY=sk-... npx tsx src/cli.ts path/to/file.har --explain
+HAR_ANALYZER_API_KEY=sk-ant-... npx tsx src/cli.ts path/to/file.har --explain --provider anthropic
 ```
 
 ## Features
 
 - **Metrics**: total requests, transfer size, page load time, TTFB, DNS, TCP stats
 - **Bottleneck detection**:
-  - Large unoptimized images
-  - Unminified JavaScript bundles
-  - Slow requests blocking page load
-  - High TTFB
-  - Missing cache headers
+  - Large unoptimized images (>500KB)
+  - Unminified JavaScript bundles (>100KB, no `.min.`)
+  - Large JS/CSS bundles (>500KB)
+  - Slow requests blocking page load (>2s)
+  - High TTFB (>1s)
+  - Missing cache headers (Cache-Control)
+  - Missing ETag or Last-Modified headers
   - HTTP redirect chains
+  - Serial (non-parallel) request patterns
+  - Render-blocking resources
   - Excessive third-party requests
-- **Resource breakdown**: counts, size, and time by resource type (script, image, font, etc.)
+- **Resource breakdown**: counts, size, and time by resource type
 - **Waterfall analysis**: slowest requests, redirect chains, blocking resources
+- **AI report**: OpenAI or Anthropic generates executive summary, prioritized fixes, and before/after estimates
+
+## AI Configuration
+
+| Option | Env Var | Default |
+|--------|---------|---------|
+| `--api-key <key>` | `HAR_ANALYZER_API_KEY` | — |
+| `--provider openai` | — | `openai` |
+| `--provider anthropic` | — | — |
 
 ## Architecture
 
@@ -41,12 +61,18 @@ HAR file → HarParser → AnalyzedEntry[]
                                     ├─ HighTtfbAnalyzer
                                     ├─ MissingCacheHeadersAnalyzer
                                     ├─ RedirectChainsAnalyzer
+                                    ├─ LargeBundleAnalyzer
+                                    ├─ NoEtagAnalyzer
+                                    ├─ SerialRequestsAnalyzer
+                                    ├─ RenderBlockingAnalyzer
                                     └─ ThirdPartyAnalyzer
                              ↓
                     Formatter → CLI output / JSON
+                             ↓
+                    LLM Provider → AI report (OpenAI/Anthropic)
 ```
 
-Pluggable analyzers implement the `IAnalyzer` interface. Add new checks without modifying existing code:
+Adding a new analyzer requires zero changes to existing code:
 
 ```ts
 class MyAnalyzer implements IAnalyzer {
@@ -55,7 +81,6 @@ class MyAnalyzer implements IAnalyzer {
     // return findings or null
   }
 }
-
 engine.register(new MyAnalyzer());
 ```
 
@@ -63,20 +88,34 @@ engine.register(new MyAnalyzer());
 
 ```
 src/
-  types.ts         — All type definitions
-  interfaces.ts    — Abstractions (IHarParser, IMetricsComputer, IAnalyzer, IReportFormatter)
-  parser.ts        — HarParser: reads and enriches HAR entries
-  metrics.ts       — MetricsComputer: aggregates timing/size stats
-  analyzers.ts     — AnalyzerEngine + pluggable bottleneck detectors
-  formatters.ts    — CliFormatter (human) + JsonFormatter (machine)
-  cli.ts           — DI wiring and CLI entry point
+  types.ts              — All type definitions (HarLog, MetricsResult, Bottleneck, etc.)
+  interfaces.ts         — Abstractions (IHarParser, IMetricsComputer, IAnalyzer, IReportFormatter)
+  parser.ts             — HarParser: reads and enriches HAR entries
+  metrics.ts            — MetricsComputer: aggregates timing/size stats
+  analyzers/
+    engine.ts           — AnalyzerEngine (pluggable registry)
+    checks.ts           — 11 IAnalyzer implementations
+    index.ts            — Barrel
+  formatters.ts         — CliFormatter + JsonFormatter
+  llm/
+    provider.ts         — ILLMProvider interface + types
+    openai.ts           — OpenAI provider
+    anthropic.ts        — Anthropic provider
+    prompt.ts           — Prompt builder from metrics + bottlenecks
+    parser.ts           — Shared LLM response parser
+    index.ts            — Barrel
+  utils/
+    format.ts           — Bytes/time formatting helpers
+  cli.ts                — DI wiring and CLI entry point
+test/
+  fixtures/
+    sample.har          — Sample HAR for testing
 ```
 
 ## Development
 
 ```bash
-npm run dev       # run with tsx
-npm run typecheck # TypeScript check
-npm run build     # compile to dist/
+npm run dev             # run with tsx
+npm run typecheck       # TypeScript check
+npm run build           # compile to dist/
 ```
-# har-analyzer-ai

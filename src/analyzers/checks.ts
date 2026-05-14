@@ -5,11 +5,11 @@ import type { IAnalyzer } from '../interfaces.js';
 export class LargeImagesAnalyzer implements IAnalyzer {
   readonly name = 'large-images';
 
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
     const large = entries.filter(
       (e) => e.resourceType === 'image' && e.response.content.size > 500_000
     );
-    if (large.length === 0) return null;
+    if (large.length === 0) return [];
 
     return [
       {
@@ -29,14 +29,14 @@ export class LargeImagesAnalyzer implements IAnalyzer {
 export class UnminifiedJsAnalyzer implements IAnalyzer {
   readonly name = 'unminified-js';
 
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
     const unminified = entries.filter(
       (e) =>
         e.resourceType === 'script' &&
         !e.request.url.includes('.min.') &&
         e.response.content.size > 100_000
     );
-    if (unminified.length === 0) return null;
+    if (unminified.length === 0) return [];
 
     return [
       {
@@ -56,9 +56,9 @@ export class UnminifiedJsAnalyzer implements IAnalyzer {
 export class SlowRequestsAnalyzer implements IAnalyzer {
   readonly name = 'slow-requests';
 
-  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] {
     const slow = metrics.slowestEntries.filter((e) => e.time > 2000);
-    if (slow.length === 0) return null;
+    if (slow.length === 0) return [];
 
     return [
       {
@@ -77,9 +77,9 @@ export class SlowRequestsAnalyzer implements IAnalyzer {
 export class HighTtfbAnalyzer implements IAnalyzer {
   readonly name = 'high-ttfb';
 
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
     const docs = entries.filter((e) => e.resourceType === 'document' && e.ttfb > 1000);
-    if (docs.length === 0) return null;
+    if (docs.length === 0) return [];
 
     return [
       {
@@ -97,7 +97,7 @@ export class HighTtfbAnalyzer implements IAnalyzer {
 export class MissingCacheHeadersAnalyzer implements IAnalyzer {
   readonly name = 'missing-cache-headers';
 
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
     const missing = entries.filter((e) => {
       if (e.resourceType === 'document') return false;
       const cc = e.response.headers.find(
@@ -105,7 +105,7 @@ export class MissingCacheHeadersAnalyzer implements IAnalyzer {
       );
       return !cc;
     });
-    if (missing.length <= 5) return null;
+    if (missing.length <= 5) return [];
 
     return [
       {
@@ -124,8 +124,8 @@ export class MissingCacheHeadersAnalyzer implements IAnalyzer {
 export class RedirectChainsAnalyzer implements IAnalyzer {
   readonly name = 'redirect-chains';
 
-  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] | null {
-    if (metrics.redirectChains.length === 0) return null;
+  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] {
+    if (metrics.redirectChains.length === 0) return [];
 
     const totalRedirectTime = Math.round(
       metrics.redirectChains.reduce((s, c) => s + c.totalTime, 0)
@@ -142,13 +142,140 @@ export class RedirectChainsAnalyzer implements IAnalyzer {
   }
 }
 
+/** Detects bundles (>500KB) regardless of .min. status */
+export class LargeBundleAnalyzer implements IAnalyzer {
+  readonly name = 'large-bundles';
+
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+    const large = entries.filter(
+      (e) =>
+        (e.resourceType === 'script' || e.resourceType === 'stylesheet') &&
+        e.response.content.size > 500_000
+    );
+    if (large.length === 0) return [];
+
+    return [
+      {
+        severity: 'high',
+        category: 'bundles',
+        title: 'Large JS/CSS bundles',
+        detail: `${large.length} bundles >500KB: ${large
+          .map((e) => e.pathname.split('/').pop())
+          .join(', ')}`,
+        suggestion: 'Code-split large bundles, tree-shake unused exports, lazy-load',
+      },
+    ];
+  }
+}
+
+/** Flags missing ETag/Last-Modified on cacheable resources */
+export class NoEtagAnalyzer implements IAnalyzer {
+  readonly name = 'missing-etag';
+
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+    const cacheableTypes = new Set(['script', 'stylesheet', 'image', 'font']);
+    const missing = entries.filter((e) => {
+      if (!cacheableTypes.has(e.resourceType)) return false;
+      const hasEtag = e.response.headers.some((h) => h.name.toLowerCase() === 'etag');
+      const hasLastModified = e.response.headers.some(
+        (h) => h.name.toLowerCase() === 'last-modified'
+      );
+      return !hasEtag && !hasLastModified;
+    });
+    if (missing.length <= 5) return [];
+
+    return [
+      {
+        severity: 'medium',
+        category: 'caching',
+        title: 'Missing ETag or Last-Modified headers',
+        detail: `${missing.length} cacheable resources lack both ETag and Last-Modified`,
+        suggestion: 'Add ETag or Last-Modified headers to enable conditional revalidation',
+      },
+    ];
+  }
+}
+
+/** Detects serial (non-parallel) request patterns to the same host */
+export class SerialRequestsAnalyzer implements IAnalyzer {
+  readonly name = 'serial-requests';
+
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+    const byHost = new Map<string, AnalyzedEntry[]>();
+    for (const e of entries) {
+      if (!e.hostname) continue;
+      if (!byHost.has(e.hostname)) byHost.set(e.hostname, []);
+      byHost.get(e.hostname)!.push(e);
+    }
+
+    const results: Bottleneck[] = [];
+
+    for (const [host, reqs] of byHost) {
+      const sorted = [...reqs].sort(
+        (a, b) =>
+          new Date(a.startedDateTime).getTime() - new Date(b.startedDateTime).getTime()
+      );
+
+      let serialCount = 0;
+      let prevEnd = 0;
+
+      for (const r of sorted) {
+        const start = new Date(r.startedDateTime).getTime();
+        if (prevEnd > 0 && start >= prevEnd) {
+          serialCount++;
+        } else if (prevEnd > 0) {
+          serialCount = 0;
+        }
+        prevEnd = start + r.time;
+      }
+
+      if (serialCount >= 3) {
+        results.push({
+          severity: 'medium',
+          category: 'waterfall',
+          title: `Serial requests to ${host}`,
+          detail: `${serialCount + 1} consecutive requests to ${host} are serial (not parallel)`,
+          suggestion:
+            'Enable HTTP/2 multiplexing, use connection keepalive, or parallelize resource loading',
+        });
+      }
+    }
+
+    return results;
+  }
+}
+
+/** Identifies render-blocking resources (CSS/JS that block paint) */
+export class RenderBlockingAnalyzer implements IAnalyzer {
+  readonly name = 'render-blocking';
+
+  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+    const blocking = entries.filter((e) => e.isBlocking);
+    const largeBlocking = blocking.filter((e) => e.response.content.size > 50_000);
+    if (largeBlocking.length === 0) return [];
+
+    return [
+      {
+        severity: 'high',
+        category: 'critical-path',
+        title: 'Render-blocking resources',
+        detail: `${largeBlocking.length} blocking resources >50KB: ${largeBlocking
+          .map((e) => e.pathname.split('/').pop())
+          .join(', ')}`,
+        suggestion:
+          'Inline critical CSS, defer non-critical CSS/JS, use media queries on stylesheets',
+      },
+    ];
+  }
+}
+
 /** Warns about excessive requests to third-party hosts */
 export class ThirdPartyAnalyzer implements IAnalyzer {
   readonly name = 'third-party';
 
-  analyze(metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] | null {
+  analyze(metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
     const mainHost = entries[0]?.hostname;
-    if (!mainHost) return null;
+    if (!mainHost) return [];
 
     const hostCounts = new Map<string, number>();
     for (const e of entries) {
@@ -169,6 +296,6 @@ export class ThirdPartyAnalyzer implements IAnalyzer {
       }
     }
 
-    return results.length > 0 ? results : null;
+    return results;
   }
 }

@@ -1,3 +1,4 @@
 node_modules/
 dist/
 *.har
+!test/fixtures/*.har

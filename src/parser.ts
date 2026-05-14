@@ -30,13 +30,39 @@ function isBlocking(resourceType: ResourceType): boolean {
 
 export class HarParser implements IHarParser {
   parse(filePath: string): HarLog {
-    const raw = readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw) as HarLog;
+    let raw: string;
+    try {
+      raw = readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`File not found: ${filePath}`);
+      }
+      throw new Error(`Cannot read file: ${filePath} — ${(err as Error).message}`);
+    }
+
+    try {
+      return JSON.parse(raw) as HarLog;
+    } catch {
+      throw new Error(`Invalid HAR file: ${filePath} — not valid JSON`);
+    }
   }
 
   analyze(entries: HarEntry[]): AnalyzedEntry[] {
     return entries.map((e) => {
-      const url = new URL(e.request.url);
+      let url: URL;
+      try {
+        url = new URL(e.request.url);
+      } catch {
+        return {
+          ...e,
+          resourceType: 'other' as ResourceType,
+          hostname: '',
+          pathname: '',
+          ttfb: safeTiming(e.timings.wait),
+          isBlocking: false,
+        };
+      }
+
       const mimeType = e.response.content.mimeType ?? '';
       const resourceType = classifyResourceType(url.href, mimeType);
 
