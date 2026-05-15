@@ -1,82 +1,56 @@
-# HAR Analyzer AI
+# HAR Analyzer
 
-Parse, analyze, and explain HAR files. Detects performance bottlenecks and generates plain-English reports with AI-powered explanations.
+Parse, analyze, and explain HAR files. Detects performance bottlenecks with 11 analyzers and generates AI-powered reports with code-level fixes.
 
-## Quick Start
+## CLI
 
 ```bash
 npx tsx src/cli.ts path/to/file.har
 ```
 
-Machine-readable JSON:
+| Flag | Description |
+|------|-------------|
+| `--json` | Machine-readable JSON |
+| `--html` | Standalone HTML report |
+| `--html -o path/to/report.html` | Custom output path |
+| `--explain` | AI-powered analysis |
+| `--api-key <key>` | API key (or `HAR_ANALYZER_API_KEY` env) |
+| `--provider openai\|anthropic` | LLM provider |
+| `--no-cache` | Bypass LLM response cache |
 
-```bash
-npx tsx src/cli.ts path/to/file.har --json
-```
-
-HTML report:
-
-```bash
-npx tsx src/cli.ts path/to/file.har --html
-npx tsx src/cli.ts path/to/file.har --html -o /path/to/report.html
-```
-
-AI-powered analysis:
-
-```bash
-HAR_ANALYZER_API_KEY=sk-... npx tsx src/cli.ts path/to/file.har --explain
-HAR_ANALYZER_API_KEY=sk-ant-... npx tsx src/cli.ts path/to/file.har --explain --provider anthropic
-```
-
-## Interactive Web Tool
-
-Run locally with:
+## Web UI
 
 ```bash
 npm run web
 # → http://localhost:3000
 ```
 
-Drop a `.har` file — analysis runs automatically and the LLM produces a structured report with dependency-chain insights, third-party attribution, and code-level fixes.
+This starts two servers concurrently:
 
-The web UI is an ES module app with no build step:
+| Process | Port | Role |
+|---------|------|------|
+| Next.js | `3000` | Frontend UI (React + Tailwind) |
+| `server.js` | `3001` | LLM API proxy (reads `web/env.js`) |
 
-| File | Responsibility | Principles |
-|---|---|---|
-| `index.html` | HTML + CSS only | Single responsibility |
-| `main.js` | UI orchestration, event handlers, analyzers | Composition, side-effects isolated |
-| `third-party.js` | Services DB + pure identification functions | Pure data + pure functions, open for extension |
-| `prompt-builder.js` | Dependency-chain prompt construction | Pure function, single responsibility |
+Configure your LLM API key in `web/env.js` (copy from `web/env.example.js`):
 
-## Features
+```js
+LLM_API_KEY  = 'nvapi-your-nvidia-key';
+LLM_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+LLM_MODEL    = 'minimaxai/minimax-m2.7';
+```
 
-- **Metrics**: total requests, transfer size, page load time, TTFB, DNS, TCP stats
-- **Bottleneck detection**:
-  - Large unoptimized images (>500KB)
-  - Unminified JavaScript bundles (>100KB, no `.min.`)
-  - Large JS/CSS bundles (>500KB)
-  - Slow requests blocking page load (>2s)
-  - High TTFB (>1s)
-  - Missing cache headers (Cache-Control)
-  - Missing ETag or Last-Modified headers
-  - HTTP redirect chains
-  - Serial (non-parallel) request patterns
-  - Render-blocking resources
-  - Excessive third-party requests (>20 to same host)
-- **Resource breakdown**: counts, size, and time by resource type
-- **Waterfall analysis**: slowest requests, redirect chains, blocking resources
-- **Output formats**: CLI terminal, JSON, standalone HTML report
-- **Interactive web tool**: browser-based drag-and-drop HAR analyzer
-- **AI report**: OpenAI or Anthropic generates executive summary, prioritized fixes, and before/after estimates
+### UI Features
 
-## AI Configuration
-
-| Option | Env Var | Default |
-|--------|---------|---------|
-| `--explain` | — | — |
-| `--api-key <key>` | `HAR_ANALYZER_API_KEY` | — |
-| `--provider openai` | — | `openai` |
-| `--provider anthropic` | — | — |
+- **Drop zone** — drag-and-drop or paste HAR JSON
+- **Score ring** — animated SVG performance score (0–100) with color coding
+- **Summary cards** — requests, size, load time, TTFB, DNS, DOM ready
+- **Tabbed results**: Issues, Resources, Timing, AI Analysis
+- **Issue cards** — expandable, severity-coded (red/amber/green) with fix suggestions
+- **Resource breakdown** — type-by-type visual bars for size and time
+- **Timing tab** — slowest requests table, timing averages, redirect chains
+- **AI Analysis** — custom prompt, streaming-ready, rendered markdown with severity badges
+- **Severity coloring** — `[HIGH]`, `[CRITICAL]` → red badge; `[MEDIUM]` → amber; `[LOW]` → green
 
 ## Architecture
 
@@ -97,92 +71,132 @@ The web UI is an ES module app with no build step:
                                 │
           ┌─────────────────────┼─────────────────────┐
           ▼                     ▼                     ▼
-   ┌──────────┐        ┌──────────────┐      ┌────────────────────────────┐
-   │ Terminal │        │ HTML Report  │      │  Web Tool (ESM modules)   │
-   │  CLI     │        │  (standalone)│      │                            │
-   └──────────┘        └──────────────┘      │  index.html                │
-                                              │  modules/                  │
-                                              │    main.js (orchestrator)  │
-                                              │    analyzers.js            │
-                                              │    analysis-engine.js      │
-                                              │    format.js               │
-                                              │    third-party.js          │
-                                              │    prompt-builder.js       │
-                                              └────────────────────────────┘
+    ┌──────────┐        ┌──────────────┐      ┌─────────────────────────────────┐
+    │ Terminal │        │ HTML Report  │      │  Web UI (Next.js 16)            │
+    │  CLI     │        │ (standalone) │      │                                 │
+    └──────────┘        └──────────────┘      │  app/  (pages, layout, API)     │
+                                               │  components/  (10 components)   │
+                                               │  lib/  (TypeScript modules)     │
+                                               │  server.js  (LLM proxy, :3001)  │
+                                               └─────────────────────────────────┘
 ```
 
-The web tool uses three ES modules with no build step:
+### Web UI Data Flow
 
-- **`modules/third-party.js`** — 40-entry services database (Google Analytics, Stripe, Hotjar, etc.) + pure `identifyService()` / `tagEntries()` functions. Adding a service = adding one row to the array (Open/Closed principle).
-- **`modules/prompt-builder.js`** — pure `buildPrompt()` that assembles a structured prompt including the waterfall timeline as a dependency chain, serial request analysis, and third-party attribution.
-- **`modules/analyzers.js`** — 9 named analyzer functions (`largeImagesAnalyzer`, `unminifiedJsAnalyzer`, etc.) + `runAnalyzers()` that composes them. Each is independently testable.
-- **`modules/analysis-engine.js`** — pure entry parsing, redirect chain detection, and metrics computation.
-- **`modules/format.js`** — pure formatting helpers: `fmtBytes`, `fmtMs`, `bar`, `truncate`.
-- **`modules/main.js`** — thin orchestrator that imports the modules above, wires events, manages state, and renders the DOM. Side-effects isolated here.
+```
+Browser                    Next.js (:3000)            server.js (:3001)
+  │                              │                        │
+  │  drop .har                   │                        │
+  │─────────────────────────────►│                        │
+  │                              │                        │
+  │  analysis (client-side)      │                        │
+  │  analyzeEntries()            │                        │
+  │  computeMetrics()            │                        │
+  │  runAnalyzers()              │                        │
+  │                              │                        │
+  │  POST /api/chat              │                        │
+  │─────────────────────────────►│  POST /api/chat        │
+  │                              │───────────────────────►│  POST LLM API
+  │                              │                        │──────────────►
+  │                              │◄───────────────────────│◄──────────────
+  │◄─────────────────────────────│                        │
+  │                              │                        │
 ```
 
-Adding a new analyzer requires zero changes to existing code:
+## Shared Modules
 
-```ts
-import type { AnalyzerFn } from './interfaces.js';
+| File | Lines | Role |
+|------|-------|------|
+| `lib/types.ts` | — | All TypeScript interfaces |
+| `lib/third-party.ts` | 185 | 40-entry services DB + pure identification |
+| `lib/analysis-engine.ts` | 137 | Entry parsing, metrics, redirect detection |
+| `lib/analyzers.ts` | 218 | 11 analyzer functions (matches CLI) |
+| `lib/prompt-builder.ts` | 183 | Dependency-chain prompt construction |
+| `lib/format.ts` | 22 | Formatting helpers |
 
-export const myAnalyzer: AnalyzerFn = (metrics, entries) => {
-  // return Bottleneck[] or []
-};
-```
+## Bottleneck Detection (11 Analyzers)
 
-Then register in `cli.ts`:
-
-```ts
-const analyzers = [ ..., myAnalyzer ];
-```
+| Analyzer | Severity | Threshold |
+|----------|----------|-----------|
+| Large Images | high | >500KB |
+| Unminified JS | high | >100KB, no `.min.` |
+| Slow Requests | high | >2s |
+| High TTFB | high | >1s |
+| Large JS/CSS Bundles | high | >500KB |
+| Render-Blocking Resources | high | >50KB + blocking |
+| Missing Cache Headers | medium | 5+ resources |
+| Redirect Chains | medium | any |
+| Missing ETag/Last-Modified | medium | 5+ resources |
+| Serial Requests | medium | 3+ consecutive |
+| Third-Party Traffic | low | 20+ requests to same host |
 
 ## Project Structure
 
 ```
 src/
-  types.ts              — Data types (HarLog, MetricsResult, Bottleneck, LLMConfig, etc.)
-  interfaces.ts         — Function type aliases (AnalyzerFn, Formatter, LLMProvider, etc.)
-  parser.ts             — parseHar(), analyzeEntries(), findRedirectChains()
-  metrics.ts            — computeMetrics()
+  types.ts              — Data types
+  interfaces.ts         — Function type aliases
+  parser.ts             — HAR parsing + entry analysis
+  metrics.ts            — Metrics computation
   analyzers/
-    checks.ts           — 11 analyzer functions
-    index.ts            — Barrel + runAnalyzers() + createAnalyzers()
+    checks.ts           — 11 analyzer factories
+    index.ts            — Barrel + runAnalyzers()
   formatters/
     index.ts            — formatCli(), formatJson()
-    html.ts             — formatHtml() — standalone HTML report
+    html.ts             — Standalone HTML report
   llm/
-    index.ts            — Barrel + provider dispatch
-    openai.ts           — openaiProvider
-    anthropic.ts        — anthropicProvider
-    prompt.ts           — buildPrompt() for CLI
-    response.ts         — parseReport() — extract sections from LLM response
+    index.ts            — Provider dispatch
+    openai.ts           — OpenAI provider
+    anthropic.ts        — Anthropic provider
+    prompt.ts           — CLI prompt builder
+    response.ts         — LLM response parser
   utils/
-    format.ts           — formatBytes(), formatMs(), padStart/End
-  config.ts             — config loading + merging
-  cache.ts              — LLM result caching (hash-based, TTL)
+    format.ts           — formatBytes(), formatMs()
+  config.ts             — Config loading + merging
+  cache.ts              — LLM result cache (hash + TTL)
   cli.ts                — CLI entry point
 test/
-  fixtures/
-    sample.har
+  fixtures/sample.har
 web/
-  index.html            — Interactive HAR analyzer (HTML + CSS only)
+  app/
+    layout.tsx          — Root layout (Inter font, dark theme)
+    page.tsx            — Main page (state management)
+    globals.css         — Tailwind + component classes
+    api/chat/route.ts   — API proxy to server.js
+  components/
+    DropZone.tsx        — Drag-and-drop + paste
+    ScoreRing.tsx       — Animated SVG score ring
+    SummaryCards.tsx    — 6-metric cards grid
+    TabBar.tsx          — Glass pill tab navigation
+    IssuesTab.tsx       — Expandable issue cards
+    ResourcesTab.tsx    — Type breakdown with bars
+    TimingTab.tsx       — Slowest requests + stats
+    AiTab.tsx           — AI analysis with markdown
+    LoadingState.tsx    — Loading spinner
+    ErrorBanner.tsx     — Error display
+  lib/                  — TypeScript modules (shared with CLI logic)
+    types.ts
+    analysis-engine.ts
+    analyzers.ts
+    third-party.ts
+    prompt-builder.ts
+    format.ts
+  server.js             — LLM API proxy (port 3001)
   env.js                — API key (gitignored)
-  env.example.js        — Template for API key
-  server.js             — Static server + /api/chat proxy
-  modules/
-    main.js             — Orchestrator (events, state, rendering)
-    third-party.js      — Services database + pure identification functions
-    prompt-builder.js   — Dependency-chain prompt builder (pure)
-    analyzers.js        — 9 named analyzer functions + runAnalyzers
-    analysis-engine.js  — Entry parsing, metrics computation, redirect detection
-    format.js           — Pure formatting helpers (fmtBytes, fmtMs, bar, truncate)
+  env.example.js        — API key template
+  package.json          — Next.js dependencies
+  next.config.js        — Next.js configuration
+  tailwind.config.ts    — Tailwind theme
+  postcss.config.mjs    — PostCSS setup
+  tsconfig.json         — TypeScript config
 ```
 
 ## Development
 
 ```bash
-npm run dev             # run with tsx
+npm run dev             # run CLI with tsx
+npm run test            # 57 tests (vitest)
 npm run typecheck       # TypeScript check
-npm run build           # compile to dist/
+npm run web             # start web UI (Next.js + proxy)
+npm run web:build       # production build
 ```
