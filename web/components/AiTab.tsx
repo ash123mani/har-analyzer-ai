@@ -79,26 +79,13 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
         /<strong>Severity<\/strong>: (Low|Info)/gi,
         '<strong>Severity</strong>: <span class="sv-low">$1</span>',
       )
-      .replace(
-        /<strong>Impact<\/strong>/gi,
-        '<strong class="text-amber-400">Impact</strong>',
-      )
-      .replace(
-        /<strong>Fix<\/strong>/gi,
-        '<strong class="text-emerald-400">Fix</strong>',
-      )
-      .replace(
-        /<strong>Finding<\/strong>/gi,
-        '<strong class="text-indigo-400">Finding</strong>',
-      )
-      .replace(
-        /<strong>Why<\/strong>/gi,
-        '<strong class="text-amber-400">Why</strong>',
-      )
-      .replace(
-        /(?:^|\n)[-*] \[(\d+|HIGH|MEDIUM|LOW|CRITICAL)\]/gim,
-        (m) => m,
-      );
+      .replace(/<strong>What<\/strong>/gi, '<strong class="text-indigo-400">What</strong>')
+      .replace(/<strong>Why It Matters<\/strong>/gi, '<strong class="text-amber-400">Why It Matters</strong>')
+      .replace(/<strong>How to Fix<\/strong>/gi, '<strong class="text-emerald-400">How to Fix</strong>')
+      .replace(/<strong>Impact<\/strong>/gi, '<strong class="text-amber-400">Impact</strong>')
+      .replace(/<strong>Finding<\/strong>/gi, '<strong class="text-indigo-400">Finding</strong>')
+      .replace(/<strong>Why<\/strong>/gi, '<strong class="text-amber-400">Why</strong>')
+      .replace(/<strong>Fix<\/strong>/gi, '<strong class="text-emerald-400">Fix</strong>');
   }
 
   const html = llmOutput ? enrichHtml(marked.parse(llmOutput) as string) : '';

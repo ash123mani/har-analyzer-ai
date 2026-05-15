@@ -138,8 +138,7 @@
     @apply text-lg font-semibold text-white mt-10 mb-4 pl-4 border-l-[3px] border-indigo-500;
   }
   .llm-output h3 {
-    @apply text-[15px] font-bold text-white mt-8 mb-4 p-4 pl-5 -mx-2 rounded-xl bg-slate-900/60
-           border-l-[4px] border-indigo-500 leading-snug;
+    @apply text-[15px] font-bold text-white mt-8 mb-3 pl-4 border-l-[3px] border-indigo-500 leading-snug;
   }
   .llm-output h4 {
     @apply text-sm font-semibold text-slate-300 mt-6 mb-3 pl-3 border-l-2 border-slate-700;
@@ -169,20 +168,19 @@
 
   /* ── Lists ─────────────────────────────────────── */
   .llm-output ul, .llm-output ol {
-    @apply my-3 ml-6 space-y-1.5;
+    @apply my-3 ml-5 space-y-1.5;
   }
   .llm-output ul {
-    @apply list-none;
-  }
-  .llm-output ul li {
-    @apply pl-5 relative;
-  }
-  .llm-output ul li::before {
-    content: '';
-    @apply absolute left-0 top-[10px] w-1.5 h-1.5 rounded-full bg-indigo-500/60;
+    @apply list-disc marker:text-indigo-400/70;
   }
   .llm-output ol {
-    @apply list-decimal marker:text-slate-500 marker:font-bold;
+    @apply list-decimal marker:text-slate-400 marker:font-semibold;
+  }
+  .llm-output li {
+    @apply text-slate-300 leading-relaxed;
+  }
+  .llm-output li > strong:first-child {
+    @apply text-white;
   }
 
   /* ── Dividers ──────────────────────────────────── */
@@ -192,32 +190,13 @@
 
   /* ── Code blocks ───────────────────────────────── */
   .llm-output pre {
-    @apply my-5 p-0 rounded-xl bg-[#0a0f1e] border border-slate-800 overflow-hidden text-sm leading-relaxed;
-  }
-  .llm-output pre > div {
-    @apply p-4 overflow-x-auto;
+    @apply my-5 rounded-xl bg-[#0a0f1e] border border-slate-800 overflow-x-auto text-sm leading-relaxed;
   }
   .llm-output pre code {
-    @apply bg-transparent p-0 rounded-none text-slate-200;
-  }
-  .llm-output pre::before {
-    content: 'Code';
-    @apply block text-[10px] font-bold text-slate-600 uppercase tracking-wider
-           px-4 py-2 bg-slate-900 border-b border-slate-800;
+    @apply block p-4 bg-transparent rounded-none text-slate-200 font-mono text-[13px] leading-relaxed;
   }
   .llm-output :not(pre) > code {
-    @apply font-mono text-sm bg-slate-800/80 px-1.5 py-0.5 rounded-md text-indigo-200 border border-slate-700/50;
-  }
-
-  /* ── Fix / Suggestion code blocks ──────────────── */
-  .llm-output h4:has(+ pre) {
-    @apply mb-0 pb-2;
-  }
-  .llm-output h4:has(+ pre) + pre {
-    @apply mt-0 rounded-t-none;
-  }
-  .llm-output h4:has(+ pre) + pre::before {
-    @apply hidden;
+    @apply font-mono text-[13px] bg-slate-800/80 px-1.5 py-0.5 rounded-md text-indigo-200 border border-slate-700/50;
   }
 
   /* ── Tables ────────────────────────────────────── */
