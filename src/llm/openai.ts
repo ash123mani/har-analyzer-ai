@@ -1,29 +1,24 @@
 import OpenAI from 'openai';
-import type { ILLMProvider, LLMConfig, LLMReport } from './provider.js';
-import { parseReport } from './parser.js';
+import type { LLMConfig, LLMReport } from '../types.js';
+import type { LLMProvider } from '../interfaces.js';
+import { parseReport } from './response.js';
 
-/** LLM provider using OpenAI's API */
-export class OpenAIProvider implements ILLMProvider {
-  readonly name = 'openai';
+export const openaiProvider: LLMProvider = async (prompt: string, config: LLMConfig): Promise<LLMReport> => {
+  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
 
-  async generateReport(prompt: string, config: LLMConfig): Promise<LLMReport> {
-    const client = new OpenAI({ apiKey: config.apiKey });
+  const response = await client.chat.completions.create({
+    model: config.model ?? 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a web performance expert. Analyze HAR data and return a structured report. Use markdown formatting.',
+      },
+      { role: 'user', content: prompt },
+    ],
+    temperature: 0.3,
+    max_tokens: 2000,
+  });
 
-    const response = await client.chat.completions.create({
-      model: config.model ?? 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a web performance expert. Analyze HAR data and return a structured report. Use markdown formatting.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    });
-
-    const content = response.choices[0]?.message?.content ?? '';
-    return parseReport(content);
-  }
-}
+  return parseReport(response.choices[0]?.message?.content ?? '');
+};

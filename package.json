@@ -5,16 +5,24 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "web": "concurrently -n proxy,next -c yellow,blue \"PORT=3001 node web/server.js\" \"npm run dev --prefix web\"",
+    "web:build": "npm run build --prefix web",
+    "web:start": "concurrently -n proxy,next -c yellow,blue \"PORT=3001 node web/server.js\" \"npm run start --prefix web\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "commander": "^12.0.0",
-    "openai": "^6.37.0"
+    "openai": "^6.37.0",
+    "ora": "^9.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "concurrently": "^9.2.1",
     "tsx": "^4.0.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.6"
   }
 }

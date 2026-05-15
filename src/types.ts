@@ -1,4 +1,3 @@
-/** HAR file format as exported by browser DevTools */
 export interface HarLog {
   log: {
     version: string;
@@ -8,7 +7,6 @@ export interface HarLog {
   };
 }
 
-/** A page in the HAR (one navigation/document load) */
 export interface HarPage {
   id: string;
   startedDateTime: string;
@@ -16,7 +14,6 @@ export interface HarPage {
   pageTimings: { onContentLoad?: number; onLoad?: number; [key: string]: unknown };
 }
 
-/** A single network request/response captured by the browser */
 export interface HarEntry {
   startedDateTime: string;
   time: number;
@@ -28,7 +25,6 @@ export interface HarEntry {
   connection?: string;
 }
 
-/** Request details (method, URL, headers, etc.) */
 export interface HarRequest {
   method: string;
   url: string;
@@ -41,7 +37,6 @@ export interface HarRequest {
   bodySize: number;
 }
 
-/** Response details (status, headers, content, etc.) */
 export interface HarResponse {
   status: number;
   statusText: string;
@@ -54,7 +49,6 @@ export interface HarResponse {
   bodySize: number;
 }
 
-/** Request phase timings (DNS, TCP, TLS, wait, receive) in ms */
 export interface HarTimings {
   dns: number;
   connect: number;
@@ -70,12 +64,10 @@ export interface HarCache {
   afterRequest?: unknown;
 }
 
-/** Classified type of a loaded resource */
 export type ResourceType =
   | 'document' | 'stylesheet' | 'script' | 'image' | 'font'
   | 'xhr' | 'fetch' | 'media' | 'other';
 
-/** Enriched entry with computed metadata (resource type, TTFB, blocking status) */
 export interface AnalyzedEntry extends HarEntry {
   resourceType: ResourceType;
   hostname: string;
@@ -84,7 +76,6 @@ export interface AnalyzedEntry extends HarEntry {
   isBlocking: boolean;
 }
 
-/** A chain of HTTP redirects leading from one URL to another */
 export interface RedirectChain {
   initialUrl: string;
   finalUrl: string;
@@ -92,7 +83,6 @@ export interface RedirectChain {
   totalTime: number;
 }
 
-/** Aggregated metrics computed from analyzed entries */
 export interface MetricsResult {
   totalRequests: number;
   totalSize: number;
@@ -109,11 +99,23 @@ export interface MetricsResult {
   waterfall: AnalyzedEntry[];
 }
 
-/** A performance bottleneck detected by an analyzer */
 export interface Bottleneck {
   severity: 'high' | 'medium' | 'low';
   category: string;
   title: string;
   detail: string;
   suggestion: string;
+}
+
+export interface LLMConfig {
+  apiKey: string;
+  model?: string;
+  baseURL?: string;
+}
+
+export interface LLMReport {
+  summary: string;
+  criticalIssues: string;
+  findings: string;
+  estimatedImprovement: string;
 }

@@ -1,7 +1,6 @@
 import type { MetricsResult, Bottleneck } from '../types.js';
 import { formatBytes, formatMs } from '../utils/format.js';
 
-/** Build a structured prompt for the LLM from analysis data */
 export function buildPrompt(metrics: MetricsResult, bottlenecks: Bottleneck[]): string {
   const lines: string[] = [];
 

@@ -1,206 +1,162 @@
 import type { MetricsResult, AnalyzedEntry, Bottleneck } from '../types.js';
-import type { IAnalyzer } from '../interfaces.js';
+import type { AnalyzerFn } from '../interfaces.js';
+import type { AnalyzerConfig } from '../config.js';
 
-/** Detects unoptimized large images (>500KB) */
-export class LargeImagesAnalyzer implements IAnalyzer {
-  readonly name = 'large-images';
+const DEFAULTS = {
+  largeImageThreshold: 500_000,
+  unminifiedJsThreshold: 100_000,
+  slowRequestThreshold: 2000,
+  highTtfbThreshold: 1000,
+  missingCacheHeadersThreshold: 5,
+  largeBundleThreshold: 500_000,
+  noEtagThreshold: 5,
+  serialRequestMinCount: 3,
+  renderBlockingThreshold: 50_000,
+  thirdPartyRequestThreshold: 20,
+};
 
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function largeImagesAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.largeImageThreshold ?? DEFAULTS.largeImageThreshold;
+  return (_metrics, entries) => {
     const large = entries.filter(
-      (e) => e.resourceType === 'image' && e.response.content.size > 500_000
+      (e) => e.resourceType === 'image' && e.response.content.size > threshold
     );
     if (large.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'images',
-        title: 'Large images detected',
-        detail: `${large.length} images exceed 500KB: ${large
-          .map((e) => e.request.url.split('/').pop())
-          .join(', ')}`,
-        suggestion: 'Compress images, use WebP/AVIF, serve responsive sizes',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'images',
+      title: 'Large images detected',
+      detail: `${large.length} images exceed ${(threshold / 1000).toFixed(0)}KB: ${large.map((e) => e.request.url.split('/').pop()).join(', ')}`,
+      suggestion: 'Compress images, use WebP/AVIF, serve responsive sizes',
+    }];
+  };
 }
 
-/** Detects unminified JavaScript bundles (>100KB, no .min. in path) */
-export class UnminifiedJsAnalyzer implements IAnalyzer {
-  readonly name = 'unminified-js';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function unminifiedJsAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.unminifiedJsThreshold ?? DEFAULTS.unminifiedJsThreshold;
+  return (_metrics, entries) => {
     const unminified = entries.filter(
       (e) =>
         e.resourceType === 'script' &&
         !e.request.url.includes('.min.') &&
-        e.response.content.size > 100_000
+        e.response.content.size > threshold
     );
     if (unminified.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'javascript',
-        title: 'Unminified JS bundles',
-        detail: `${unminified.length} scripts >100KB appear unminified: ${unminified
-          .map((e) => e.pathname.split('/').pop())
-          .join(', ')}`,
-        suggestion: 'Enable minification in your build step',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'javascript',
+      title: 'Unminified JS bundles',
+      detail: `${unminified.length} scripts >${(threshold / 1000).toFixed(0)}KB appear unminified: ${unminified.map((e) => e.pathname.split('/').pop()).join(', ')}`,
+      suggestion: 'Enable minification in your build step',
+    }];
+  };
 }
 
-/** Flags requests taking >2s */
-export class SlowRequestsAnalyzer implements IAnalyzer {
-  readonly name = 'slow-requests';
-
-  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] {
-    const slow = metrics.slowestEntries.filter((e) => e.time > 2000);
+export function slowRequestsAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.slowRequestThreshold ?? DEFAULTS.slowRequestThreshold;
+  return (metrics, _entries) => {
+    const slow = metrics.slowestEntries.filter((e) => e.time > threshold);
     if (slow.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'waterfall',
-        title: 'Slow requests blocking page load',
-        detail: `${slow.length} requests took >2s. Slowest: ${slow[0].request.url}`,
-        suggestion:
-          'Optimize server response time, add CDN, or lazy-load non-critical resources',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'waterfall',
+      title: 'Slow requests blocking page load',
+      detail: `${slow.length} requests took >${threshold}ms. Slowest: ${slow[0].request.url}`,
+      suggestion: 'Optimize server response time, add CDN, or lazy-load non-critical resources',
+    }];
+  };
 }
 
-/** Checks for high TTFB on the document resource */
-export class HighTtfbAnalyzer implements IAnalyzer {
-  readonly name = 'high-ttfb';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
-    const docs = entries.filter((e) => e.resourceType === 'document' && e.ttfb > 1000);
+export function highTtfbAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.highTtfbThreshold ?? DEFAULTS.highTtfbThreshold;
+  return (_metrics, entries) => {
+    const docs = entries.filter((e) => e.resourceType === 'document' && e.ttfb > threshold);
     if (docs.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'ttfb',
-        title: 'High TTFB',
-        detail: `Document TTFB is ${Math.round(docs[0].ttfb)}ms`,
-        suggestion: 'Use a CDN, enable server-side caching, optimize backend queries',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'ttfb',
+      title: 'High TTFB',
+      detail: `Document TTFB is ${Math.round(docs[0].ttfb)}ms`,
+      suggestion: 'Use a CDN, enable server-side caching, optimize backend queries',
+    }];
+  };
 }
 
-/** Finds cacheable resources missing Cache-Control headers */
-export class MissingCacheHeadersAnalyzer implements IAnalyzer {
-  readonly name = 'missing-cache-headers';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function missingCacheHeadersAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const minCount = cfg?.missingCacheHeadersThreshold ?? DEFAULTS.missingCacheHeadersThreshold;
+  return (_metrics, entries) => {
     const missing = entries.filter((e) => {
       if (e.resourceType === 'document') return false;
-      const cc = e.response.headers.find(
-        (h) => h.name.toLowerCase() === 'cache-control'
-      );
-      return !cc;
+      return !e.response.headers.find((h) => h.name.toLowerCase() === 'cache-control');
     });
-    if (missing.length <= 5) return [];
-
-    return [
-      {
-        severity: 'medium',
-        category: 'caching',
-        title: 'Missing cache headers',
-        detail: `${missing.length} resources lack Cache-Control headers`,
-        suggestion:
-          'Set Cache-Control headers for static assets (e.g., immutable, max-age=31536000)',
-      },
-    ];
-  }
+    if (missing.length <= minCount) return [];
+    return [{
+      severity: 'medium',
+      category: 'caching',
+      title: 'Missing cache headers',
+      detail: `${missing.length} resources lack Cache-Control headers`,
+      suggestion: 'Set Cache-Control headers for static assets (e.g., immutable, max-age=31536000)',
+    }];
+  };
 }
 
-/** Reports HTTP redirect chains */
-export class RedirectChainsAnalyzer implements IAnalyzer {
-  readonly name = 'redirect-chains';
-
-  analyze(metrics: MetricsResult, _entries: AnalyzedEntry[]): Bottleneck[] {
+export function redirectChainsAnalyzer(_cfg?: AnalyzerConfig): AnalyzerFn {
+  return (metrics, _entries) => {
     if (metrics.redirectChains.length === 0) return [];
-
-    const totalRedirectTime = Math.round(
-      metrics.redirectChains.reduce((s, c) => s + c.totalTime, 0)
-    );
-    return [
-      {
-        severity: 'medium',
-        category: 'redirects',
-        title: 'Redirect chains found',
-        detail: `${metrics.redirectChains.length} chain(s). Total redirect time: ${totalRedirectTime}ms`,
-        suggestion: 'Update links to point directly to the final URL',
-      },
-    ];
-  }
+    const totalRedirectTime = Math.round(metrics.redirectChains.reduce((s, c) => s + c.totalTime, 0));
+    return [{
+      severity: 'medium',
+      category: 'redirects',
+      title: 'Redirect chains found',
+      detail: `${metrics.redirectChains.length} chain(s). Total redirect time: ${totalRedirectTime}ms`,
+      suggestion: 'Update links to point directly to the final URL',
+    }];
+  };
 }
 
-/** Detects bundles (>500KB) regardless of .min. status */
-export class LargeBundleAnalyzer implements IAnalyzer {
-  readonly name = 'large-bundles';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function largeBundleAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.largeBundleThreshold ?? DEFAULTS.largeBundleThreshold;
+  return (_metrics, entries) => {
     const large = entries.filter(
       (e) =>
         (e.resourceType === 'script' || e.resourceType === 'stylesheet') &&
-        e.response.content.size > 500_000
+        e.response.content.size > threshold
     );
     if (large.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'bundles',
-        title: 'Large JS/CSS bundles',
-        detail: `${large.length} bundles >500KB: ${large
-          .map((e) => e.pathname.split('/').pop())
-          .join(', ')}`,
-        suggestion: 'Code-split large bundles, tree-shake unused exports, lazy-load',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'bundles',
+      title: 'Large JS/CSS bundles',
+      detail: `${large.length} bundles >${(threshold / 1000).toFixed(0)}KB: ${large.map((e) => e.pathname.split('/').pop()).join(', ')}`,
+      suggestion: 'Code-split large bundles, tree-shake unused exports, lazy-load',
+    }];
+  };
 }
 
-/** Flags missing ETag/Last-Modified on cacheable resources */
-export class NoEtagAnalyzer implements IAnalyzer {
-  readonly name = 'missing-etag';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function noEtagAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const minCount = cfg?.noEtagThreshold ?? DEFAULTS.noEtagThreshold;
+  return (_metrics, entries) => {
     const cacheableTypes = new Set(['script', 'stylesheet', 'image', 'font']);
     const missing = entries.filter((e) => {
       if (!cacheableTypes.has(e.resourceType)) return false;
       const hasEtag = e.response.headers.some((h) => h.name.toLowerCase() === 'etag');
-      const hasLastModified = e.response.headers.some(
-        (h) => h.name.toLowerCase() === 'last-modified'
-      );
+      const hasLastModified = e.response.headers.some((h) => h.name.toLowerCase() === 'last-modified');
       return !hasEtag && !hasLastModified;
     });
-    if (missing.length <= 5) return [];
-
-    return [
-      {
-        severity: 'medium',
-        category: 'caching',
-        title: 'Missing ETag or Last-Modified headers',
-        detail: `${missing.length} cacheable resources lack both ETag and Last-Modified`,
-        suggestion: 'Add ETag or Last-Modified headers to enable conditional revalidation',
-      },
-    ];
-  }
+    if (missing.length <= minCount) return [];
+    return [{
+      severity: 'medium',
+      category: 'caching',
+      title: 'Missing ETag or Last-Modified headers',
+      detail: `${missing.length} cacheable resources lack both ETag and Last-Modified`,
+      suggestion: 'Add ETag or Last-Modified headers to enable conditional revalidation',
+    }];
+  };
 }
 
-/** Detects serial (non-parallel) request patterns to the same host */
-export class SerialRequestsAnalyzer implements IAnalyzer {
-  readonly name = 'serial-requests';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function serialRequestsAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const minSerial = cfg?.serialRequestMinCount ?? DEFAULTS.serialRequestMinCount;
+  return (_metrics, entries) => {
     const byHost = new Map<string, AnalyzedEntry[]>();
     for (const e of entries) {
       if (!e.hostname) continue;
@@ -212,8 +168,7 @@ export class SerialRequestsAnalyzer implements IAnalyzer {
 
     for (const [host, reqs] of byHost) {
       const sorted = [...reqs].sort(
-        (a, b) =>
-          new Date(a.startedDateTime).getTime() - new Date(b.startedDateTime).getTime()
+        (a, b) => new Date(a.startedDateTime).getTime() - new Date(b.startedDateTime).getTime()
       );
 
       let serialCount = 0;
@@ -229,51 +184,39 @@ export class SerialRequestsAnalyzer implements IAnalyzer {
         prevEnd = start + r.time;
       }
 
-      if (serialCount >= 3) {
+      if (serialCount >= minSerial) {
         results.push({
           severity: 'medium',
           category: 'waterfall',
           title: `Serial requests to ${host}`,
           detail: `${serialCount + 1} consecutive requests to ${host} are serial (not parallel)`,
-          suggestion:
-            'Enable HTTP/2 multiplexing, use connection keepalive, or parallelize resource loading',
+          suggestion: 'Enable HTTP/2 multiplexing, use connection keepalive, or parallelize resource loading',
         });
       }
     }
 
     return results;
-  }
+  };
 }
 
-/** Identifies render-blocking resources (CSS/JS that block paint) */
-export class RenderBlockingAnalyzer implements IAnalyzer {
-  readonly name = 'render-blocking';
-
-  analyze(_metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
-    const blocking = entries.filter((e) => e.isBlocking);
-    const largeBlocking = blocking.filter((e) => e.response.content.size > 50_000);
+export function renderBlockingAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.renderBlockingThreshold ?? DEFAULTS.renderBlockingThreshold;
+  return (_metrics, entries) => {
+    const largeBlocking = entries.filter((e) => e.isBlocking && e.response.content.size > threshold);
     if (largeBlocking.length === 0) return [];
-
-    return [
-      {
-        severity: 'high',
-        category: 'critical-path',
-        title: 'Render-blocking resources',
-        detail: `${largeBlocking.length} blocking resources >50KB: ${largeBlocking
-          .map((e) => e.pathname.split('/').pop())
-          .join(', ')}`,
-        suggestion:
-          'Inline critical CSS, defer non-critical CSS/JS, use media queries on stylesheets',
-      },
-    ];
-  }
+    return [{
+      severity: 'high',
+      category: 'critical-path',
+      title: 'Render-blocking resources',
+      detail: `${largeBlocking.length} blocking resources >${(threshold / 1000).toFixed(0)}KB: ${largeBlocking.map((e) => e.pathname.split('/').pop()).join(', ')}`,
+      suggestion: 'Inline critical CSS, defer non-critical CSS/JS, use media queries on stylesheets',
+    }];
+  };
 }
 
-/** Warns about excessive requests to third-party hosts */
-export class ThirdPartyAnalyzer implements IAnalyzer {
-  readonly name = 'third-party';
-
-  analyze(metrics: MetricsResult, entries: AnalyzedEntry[]): Bottleneck[] {
+export function thirdPartyAnalyzer(cfg?: AnalyzerConfig): AnalyzerFn {
+  const threshold = cfg?.thirdPartyRequestThreshold ?? DEFAULTS.thirdPartyRequestThreshold;
+  return (_metrics, entries) => {
     const mainHost = entries[0]?.hostname;
     if (!mainHost) return [];
 
@@ -285,7 +228,7 @@ export class ThirdPartyAnalyzer implements IAnalyzer {
 
     const results: Bottleneck[] = [];
     for (const [host, count] of hostCounts) {
-      if (count > 20 && host !== mainHost) {
+      if (count > threshold && host !== mainHost) {
         results.push({
           severity: 'low',
           category: 'third-party',
@@ -297,5 +240,5 @@ export class ThirdPartyAnalyzer implements IAnalyzer {
     }
 
     return results;
-  }
+  };
 }

@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.har
 !test/fixtures/*.har
+web/env.js
+web/.next/
+web/out/
+web/node_modules/
