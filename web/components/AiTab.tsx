@@ -30,7 +30,7 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: 'You are a senior web performance engineer. Analyze HAR data and produce a structured, scannable report. Every issue must follow **What / Why / How** format. Include ASCII bar charts (Unicode blocks), severity badges [CRITICAL] [HIGH] [MEDIUM] [LOW], and tables where useful. Be concise but complete. Use `code` for filenames, URLs, and commands.' },
+            { role: 'system', content: 'You are a senior web performance engineer. Analyze HAR data and produce a structured, scannable report. CRITICAL: Use markdown pipe tables ONLY (never ASCII box-drawing tables). Put ASCII art inside fenced code blocks. Prefix issues with [CRITICAL] [HIGH] [MEDIUM] [LOW]. Every issue must have **What** / **Why It Matters** / **How to Fix** / **Impact**. Include inline bar charts with Unicode blocks (█░). Keep descriptions tight but complete. Use `code` for filenames and commands.' },
             { role: 'user', content: prompt },
           ],
         }),

@@ -38,26 +38,39 @@ export function buildPrompt(metrics: MetricsResult, bottlenecks: Bottleneck[]): 
   }
 
   lines.push('\n## Report Format Instructions');
-  lines.push('Generate a structured report following these rules:');
+  lines.push('CRITICAL RULES — Follow these exactly:');
   lines.push('');
-  lines.push('1. **Executive Summary** — 2-3 sentences. State the single biggest issue and its Core Web Vitals impact (LCP, TTFB, CLS).');
+  lines.push('### Tables');
+  lines.push('- Use **markdown pipe tables** (`| col1 | col2 |`) ONLY. Never use ASCII box-drawing characters (┌─┐└┘ etc.) to draw tables.');
+  lines.push('- Markdown tables render with proper styling. ASCII tables look broken.');
   lines.push('');
-  lines.push('2. **Critical Issues** — For each issue (sorted by impact):');
-  lines.push('   - **What**: One-line description of the problem');
-  lines.push('   - **Why It Matters**: User-visible impact (e.g., "delays LCP by 1.2s on 3G")');
-  lines.push('   - **How to Fix**: Exact code snippet or config change');
-  lines.push('   - **Estimated Impact**: ms savings or % improvement');
-  lines.push('   Include an ASCII bar chart comparing the issue contribution to total page time.');
+  lines.push('### Charts & Visuals');
+  lines.push('- **Bar charts**: Use inline Unicode blocks `█` (filled) and `░` (empty). No box-drawing borders around them.');
+  lines.push('  Example: `████████░░░  80%`');
+  lines.push('- **Timeline / Waterfall**: Put inside a fenced code block so it renders monospace. Use simple `[====>]` style bars.');
+  lines.push('- **Any ASCII art with box-drawing characters** MUST be inside a markdown code block. Never in regular text.');
   lines.push('');
-  lines.push('3. **All Findings** — Numbered, priority-sorted. Keep each to 2-3 sentences. What / Why / How format.');
+  lines.push('### Issue Format (Every Issue)');
+  lines.push('  - **What**: One-line description of the problem');
+  lines.push('  - **Why It Matters**: User-visible impact (e.g., "delays LCP by 1.2s on 3G")');
+  lines.push('  - **How to Fix**: Exact code snippet or config change inside `code` or fenced code block');
+  lines.push('  - **Impact**: Estimated ms or % improvement');
   lines.push('');
-  lines.push('4. **Visual Summary** — Include where useful:');
-  lines.push('   - Bar charts using Unicode blocks (█) for resource sizes/times');
-  lines.push('   - Before/after comparison bars for top fixes');
-  lines.push('   - Timeline using box-drawing characters (─ │ └ ├) for request waterfall');
-  lines.push('   - Severity badges: [CRITICAL] [HIGH] [MEDIUM] [LOW] at start of issue lines');
+  lines.push('### Report Structure');
+  lines.push('1. **Executive Summary** — 2-3 sentences. Biggest issue + Core Web Vitals impact. Markdown table of current vs. threshold values.');
   lines.push('');
-  lines.push('CRITICAL: Keep every issue to 1-2 sentences under **What**. Use **Why** and **How** subsections. Be concise. Use tables for structured data.');
+  lines.push('2. **Critical Issues** — Sorted by impact, each with What/Why/How/Impact + inline bar chart.');
+  lines.push('');
+  lines.push('3. **All Findings** — Numbered, priority-sorted. 2-3 sentences each, What/Why/How format.');
+  lines.push('');
+  lines.push('4. **Resource Waterfall** — Inside a code block, simplified waterfall of top requests using `[====>]` bars.');
+  lines.push('');
+  lines.push('5. **Estimated Improvement** — Markdown table comparing before/after for top 3 fixes.');
+  lines.push('   | Fix | Before | After | Savings |');
+  lines.push('   |-----|--------|-------|---------|');
+  lines.push('   | Optimize images | 2.1s LCP | 1.3s LCP | 38% |');
+  lines.push('');
+  lines.push('IMPORTANT: Prefix issue lines with [CRITICAL] [HIGH] [MEDIUM] or [LOW]. Keep descriptions tight. Use `code` for filenames and URLs. Use markdown pipe tables for ALL structured data.');
 
   return lines.join('\n');
 }
