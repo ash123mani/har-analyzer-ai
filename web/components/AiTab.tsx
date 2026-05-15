@@ -30,7 +30,7 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: 'You are a web performance expert. Produce the structured report format requested in the user message.' },
+            { role: 'system', content: 'You are a senior web performance engineer. Analyze HAR data and produce a structured, scannable report. Every issue must follow **What / Why / How** format. Include ASCII bar charts (Unicode blocks), severity badges [CRITICAL] [HIGH] [MEDIUM] [LOW], and tables where useful. Be concise but complete. Use `code` for filenames, URLs, and commands.' },
             { role: 'user', content: prompt },
           ],
         }),

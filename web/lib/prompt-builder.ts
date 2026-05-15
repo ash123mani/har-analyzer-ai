@@ -126,18 +126,24 @@ export function buildPrompt(
     }
   }
 
-  text += '\n## Analysis Instructions\n';
-  text += 'Produce a structured report with exactly these sections:\n\n';
-  text += '**1. Executive Summary** (1-2 sentences)\n';
-  text += 'The single biggest perf issue and its Core Web Vitals impact (LCP, TTFB, CLS).\n\n';
-  text += '**2. Critical Issues** (what to fix first, sorted by impact)\n';
-  text += 'For each include: **Finding**, **Why** (user-visible impact), **Fix** (exact code), **Impact** (estimated ms savings)\n\n';
-  text += '**3. All Findings** (numbered, priority-sorted)\n\n';
-  text += '**4. Estimated Improvement** (if top 3 fixes are applied)\n';
-
-  if (custom) text += `\n## Additional Context\n${custom}\n`;
-
-  text += '\n## Web Vitals Benchmarks\n';
+  text += '\n## Report Format Instructions\n';
+  text += 'Generate a structured report following these rules:\n\n';
+  text += '**1. Executive Summary** \u2014 2-3 sentences. State the single biggest issue and its direct impact on Core Web Vitals (LCP, TTFB, CLS). Include a small visual benchmark bar comparing the current values against good/poor thresholds.\n\n';
+  text += '**2. Critical Issues** \u2014 For each issue (sorted by impact):\n';
+  text += '  - **What**: One-line description of the problem\n';
+  text += '  - **Why It Matters**: User-visible impact (e.g., "delays LCP by 1.2s on 3G")\n';
+  text += '  - **How to Fix**: Exact code snippet or config change\n';
+  text += '  - **Estimated Impact**: ms savings or % improvement\n';
+  text += '  Include an **ASCII bar chart** comparing the issue"s contribution to total page time relative to other issues.\n\n';
+  text += '**3. All Findings** \u2014 Numbered, priority-sorted. Keep each to 2-3 sentences. Use **What / Why / How** format.\n\n';
+  text += '**4. Visual Summary** \u2014 Include any of these where useful:\n';
+  text += '  - **Bar charts** using Unicode blocks (\u2588) showing resource sizes or times\n';
+  text += '  - **Comparison bars** showing before/after for top fixes\n';
+  text += '  - **Timeline visualization** using Unicode box-drawing characters (\u2500 \u2502 \u2514 \u251C) showing request waterfall\n';
+  text += '  - **Severity badges** using [CRITICAL] [HIGH] [MEDIUM] [LOW] tags at the start of issue lines\n';
+  text += '  - **Sparklines** (\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588) for trend indicators where applicable\n\n';
+  text += 'CRITICAL: Keep every issue description to 1-2 sentences under **What**. Use **Why** and **How** subsections. Be concise. Use tables for structured data. Use `code` for file names, URLs, and commands.\n\n';
+  text += '\n## Reference Benchmarks\n';
   text += '- TTFB: <800ms good | 800-1800ms needs work | >1800ms poor\n';
   text += '- LCP: <2.5s good | 2.5-4s needs work | >4s poor\n';
   text += '- FID/INP: <100ms good | 100-300ms needs work | >300ms poor\n';
