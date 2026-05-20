@@ -1,28 +1,44 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
-import type { Metrics, Bottleneck, AnalyzedEntry, HarFile } from '@/lib/types';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import type { Metrics, Bottleneck, AnalyzedEntry, HarFile, SecurityFinding, CategoryScore } from '@/lib/types';
 import { analyzeEntries, findRedirectChains, computeMetrics } from '@/lib/analysis-engine';
 import { runAnalyzers } from '@/lib/analyzers';
+import { analyzeSecurity, computeSecurityScore } from '@/lib/security-audit';
+import { groupByService } from '@/lib/third-party';
 import DropZone from '@/components/DropZone';
-import ScoreRing from '@/components/ScoreRing';
+import ScoreDashboard from '@/components/ScoreDashboard';
 import SummaryCards from '@/components/SummaryCards';
 import TabBar from '@/components/TabBar';
 import IssuesTab from '@/components/IssuesTab';
+import SecurityTab from '@/components/SecurityTab';
+import ThirdPartyTab from '@/components/ThirdPartyTab';
 import ResourcesTab from '@/components/ResourcesTab';
 import TimingTab from '@/components/TimingTab';
 import AiTab from '@/components/AiTab';
+import ExportReport from '@/components/ExportReport';
 import LoadingState from '@/components/LoadingState';
 import ErrorBanner from '@/components/ErrorBanner';
 
-function computeScore(metrics: Metrics, bottlenecks: Bottleneck[]): number {
-  let score = 100;
-  score -= Math.min(25, metrics.totalRequests / 8);
-  score -= Math.min(20, metrics.totalSize / 100_000);
-  score -= Math.min(25, metrics.totalTime / 150);
-  score -= Math.min(15, (metrics.ttfbStats.avg || 0) / 80);
-  score -= Math.min(15, bottlenecks.length * 4);
-  return Math.max(0, Math.min(100, Math.round(score)));
+function computeCategoryScores(metrics: Metrics, bottlenecks: Bottleneck[], securityFindings: SecurityFinding[]): CategoryScore[] {
+  const speedRaw = 100 - Math.min(30, metrics.totalTime / 100) - Math.min(20, (metrics.ttfbStats.avg || 0) / 60) - Math.min(10, metrics.slowestEntries.filter(e => e.time > 2000).length * 5);
+  const securityScore = computeSecurityScore(securityFindings);
+  const cachingRaw = 100 - Math.min(30, metrics.redirectChains.length * 10) - Math.min(20, bottlenecks.filter(b => b.title.toLowerCase().includes('cache')).length * 10);
+  const services = groupByService(metrics.waterfall);
+  const thirdPartyCount = services.length;
+  const blockingThird = services.filter(s => metrics.blockingEntries.some(e => e.service?.name === s.name)).length;
+  const thirdRiskRaw = 100 - Math.min(40, thirdPartyCount * 8) - Math.min(20, blockingThird * 10);
+  const failedEntries = metrics.waterfall.filter(e => e.response.status && (e.response.status >= 400 || e.response.status < 200));
+  const slowApis = metrics.waterfall.filter(e => e.resourceType === 'other' && e.time > 2000);
+  const apiRaw = 100 - Math.min(30, failedEntries.length * 5) - Math.min(20, slowApis.length * 5);
+
+  return [
+    { label: 'Speed', score: Math.max(0, Math.min(100, Math.round(speedRaw))), icon: '\u26A1', detail: `${metrics.waterfall.length} req / ${Math.round(metrics.totalTime)}ms` },
+    { label: 'Security', score: Math.max(0, Math.min(100, Math.round(securityScore))), icon: '\uD83D\uDD12', detail: `${securityFindings.length} issue${securityFindings.length !== 1 ? 's' : ''}` },
+    { label: 'Caching', score: Math.max(0, Math.min(100, Math.round(cachingRaw))), icon: '\uD83D\uDCC1', detail: `${metrics.redirectChains.length} redirect chain${metrics.redirectChains.length !== 1 ? 's' : ''}` },
+    { label: '3rd Party', score: Math.max(0, Math.min(100, Math.round(thirdRiskRaw))), icon: '\uD83C\uDF10', detail: `${thirdPartyCount} service${thirdPartyCount !== 1 ? 's' : ''}` },
+    { label: 'API Health', score: Math.max(0, Math.min(100, Math.round(apiRaw))), icon: '\u2699', detail: `${failedEntries.length} error${failedEntries.length !== 1 ? 's' : ''}` },
+  ];
 }
 
 export default function Home() {
@@ -30,18 +46,21 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
+  const [securityFindings, setSecurityFindings] = useState<SecurityFinding[]>([]);
   const [entries, setEntries] = useState<AnalyzedEntry[]>([]);
   const [activeTab, setActiveTab] = useState('issues');
   const [fileName, setFileName] = useState<string | null>(null);
+  const [aiReport, setAiReport] = useState('');
 
-  const score = useMemo(
-    () => (metrics ? computeScore(metrics, bottlenecks) : 0),
-    [metrics, bottlenecks],
+  const scores = useMemo(
+    () => (metrics ? computeCategoryScores(metrics, bottlenecks, securityFindings) : []),
+    [metrics, bottlenecks, securityFindings],
   );
 
   const handleHarLoad = useCallback((har: unknown) => {
     setStatus('loading');
     setError(null);
+    setAiReport('');
     try {
       const h = har as HarFile;
       const analyzed = analyzeEntries(h.log.entries || []);
@@ -49,8 +68,10 @@ export default function Home() {
       const pageTimings = h.log.pages?.[0]?.pageTimings;
       const m = computeMetrics(analyzed, chains, pageTimings as { onContentLoad?: number; onLoad?: number });
       const b = runAnalyzers(m, analyzed);
+      const sec = analyzeSecurity(h.log.entries || []);
       setMetrics(m);
       setBottlenecks(b);
+      setSecurityFindings(sec);
       setEntries(analyzed);
       setStatus('analyzed');
       setActiveTab('issues');
@@ -58,6 +79,14 @@ export default function Home() {
       setError(err instanceof Error ? err.message : 'Analysis failed');
       setStatus('error');
     }
+  }, []);
+
+  useEffect(() => {
+    function handleNavigate(e: Event) {
+      setActiveTab((e as CustomEvent).detail || 'issues');
+    }
+    window.addEventListener('navigate-tab', handleNavigate);
+    return () => window.removeEventListener('navigate-tab', handleNavigate);
   }, []);
 
   return (
@@ -88,13 +117,26 @@ export default function Home() {
         {/* ── Results ── */}
         {status === 'analyzed' && metrics && (
           <>
-            {/* Score + Summary */}
+            {/* Score Dashboard */}
+            <div className="mb-6">
+              <ScoreDashboard scores={scores} />
+            </div>
+
+            {/* Summary + Export */}
             <div className="flex flex-col lg:flex-row gap-6 mb-8">
-              <div className="card p-6 flex items-center justify-center">
-                <ScoreRing score={score} />
-              </div>
               <div className="flex-1">
                 <SummaryCards metrics={metrics} />
+              </div>
+              <div className="flex items-start">
+                <ExportReport
+                  metrics={metrics}
+                  bottlenecks={bottlenecks}
+                  securityFindings={securityFindings}
+                  scores={scores}
+                  entries={entries}
+                  aiReport={aiReport}
+                  fileName={fileName}
+                />
               </div>
             </div>
 
@@ -104,10 +146,17 @@ export default function Home() {
             {/* Tab Content */}
             <div className="mt-6">
               {activeTab === 'issues' && <IssuesTab bottlenecks={bottlenecks} />}
+              {activeTab === 'security' && <SecurityTab findings={securityFindings} score={scores[1]?.score ?? 0} />}
+              {activeTab === 'thirdparty' && <ThirdPartyTab entries={entries} />}
               {activeTab === 'resources' && <ResourcesTab metrics={metrics} />}
               {activeTab === 'timing' && <TimingTab metrics={metrics} />}
               {activeTab === 'ai' && (
-                <AiTab metrics={metrics} entries={entries} bottlenecks={bottlenecks} />
+                <AiTab
+                  metrics={metrics}
+                  entries={entries}
+                  bottlenecks={bottlenecks}
+                  onReportChange={setAiReport}
+                />
               )}
             </div>
           </>

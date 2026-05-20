@@ -9,28 +9,59 @@ interface AiTabProps {
   metrics: Metrics | null;
   entries: AnalyzedEntry[];
   bottlenecks: Bottleneck[];
+  onReportChange?: (report: string) => void;
 }
 
-export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
+const SYSTEM_PROMPT = 'You are a senior web performance engineer. Analyze HAR data and produce a structured, scannable report.\n\n'
+  + 'CRITICAL INSTRUCTIONS:\n'
+  + '1. Use markdown pipe tables ONLY (never ASCII box-drawing tables). Put ASCII art inside fenced code blocks.\n'
+  + '2. Prefix issues with [CRITICAL] [HIGH] [MEDIUM] [LOW].\n'
+  + '3. Every issue must have **What** / **Why It Matters** / **How to Fix** / **Impact**.\n'
+  + '4. Include inline bar charts with Unicode blocks (\u2588\u2591).\n'
+  + '5. Keep descriptions tight but complete. Use `code` for filenames and commands.\n\n'
+  + 'OUTPUT FORMAT:\n'
+  + 'Return your analysis in two sections separated by "---JSON---":\n'
+  + 'First section: Narrative markdown report with executive summary, tables, findings.\n'
+  + 'Second section: A JSON array of structured issues with this exact schema:\n'
+  + '```json\n'
+  + '[\n'
+  + '  {\n'
+  + '    "severity": "high|medium|low",\n'
+  + '    "title": "Short issue title",\n'
+  + '    "detail": "What the problem is",\n'
+  + '    "suggestion": "How to fix it"\n'
+  + '  }\n'
+  + ']\n'
+  + '```\n'
+  + 'Include at least 2-5 issues in the JSON array. Issues should be distinct from the rule-based bottlenecks already detected.';
+
+const SUGGESTED_QUESTIONS = [
+  'Why is the page slow to load?',
+  'Which third parties are causing delays?',
+  'How can I improve caching?',
+  'Are there security issues?',
+];
+
+export default function AiTab({ metrics, entries, bottlenecks, onReportChange }: AiTabProps) {
   const [customPrompt, setCustomPrompt] = useState('');
   const [llmOutput, setLlmOutput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  async function handleAnalyze() {
+  async function handleAnalyze(question?: string) {
     if (!metrics) return;
     setAiLoading(true);
     setAiError(null);
     setLlmOutput('');
     try {
-      const prompt = buildPrompt(metrics, entries, bottlenecks, customPrompt);
+      const prompt = buildPrompt(metrics, entries, bottlenecks, customPrompt + (question ? '\nUser question: ' + question : ''));
       setLlmOutput('_Calling LLM API\u2026_');
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: 'You are a senior web performance engineer. Analyze HAR data and produce a structured, scannable report. CRITICAL: Use markdown pipe tables ONLY (never ASCII box-drawing tables). Put ASCII art inside fenced code blocks. Prefix issues with [CRITICAL] [HIGH] [MEDIUM] [LOW]. Every issue must have **What** / **Why It Matters** / **How to Fix** / **Impact**. Include inline bar charts with Unicode blocks (█░). Keep descriptions tight but complete. Use `code` for filenames and commands.' },
+            { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: prompt },
           ],
         }),
@@ -38,13 +69,44 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
       const report = data.choices?.[0]?.message?.content || '';
-      setLlmOutput(report);
+      const { narrative, aiIssues } = parseJsonSection(report);
+      setLlmOutput(narrative || report);
+      onReportChange?.(narrative || report);
+
+      if (aiIssues.length > 0) {
+        const existing = JSON.parse(localStorage.getItem('ai-bottlenecks') || '[]');
+        const merged = [...aiIssues, ...existing].filter(
+          (item: Bottleneck, index: number, self: Bottleneck[]) =>
+            index === self.findIndex(t => t.title === item.title),
+        );
+        localStorage.setItem('ai-bottlenecks', JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent('ai-issues-updated', { detail: merged }));
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'LLM call failed';
       setAiError(msg);
       setLlmOutput('');
     }
     setAiLoading(false);
+  }
+
+  function parseJsonSection(text: string): { narrative: string; aiIssues: Bottleneck[] } {
+    const parts = text.split('---JSON---');
+    const narrative = parts[0]?.trim() || '';
+    const jsonPart = parts[1]?.trim() || '';
+    try {
+      const parsed = JSON.parse(jsonPart.replace(/^```json\n?/i, '').replace(/\n?```$/i, ''));
+      if (Array.isArray(parsed)) return { narrative, aiIssues: parsed };
+    } catch { /* not valid JSON */ }
+
+    const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (Array.isArray(parsed)) return { narrative: text.replace(jsonMatch[0], '').trim(), aiIssues: parsed };
+      } catch { /* not valid JSON */ }
+    }
+    return { narrative: text, aiIssues: [] };
   }
 
   async function handleCopy() {
@@ -103,7 +165,7 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
           className="input resize-none"
         />
         <div className="flex gap-3 mt-3">
-          <button onClick={handleAnalyze} disabled={aiLoading || !metrics} className="btn-primary">
+          <button onClick={() => handleAnalyze()} disabled={aiLoading || !metrics} className="btn-primary">
             {aiLoading ? (
               <span className="flex items-center gap-2">
                 <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
@@ -119,6 +181,22 @@ export default function AiTab({ metrics, entries, bottlenecks }: AiTabProps) {
           </button>
         </div>
       </div>
+
+      {/* Suggested Questions */}
+      {metrics && !aiLoading && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {SUGGESTED_QUESTIONS.map((q, i) => (
+            <button
+              key={i}
+              onClick={() => handleAnalyze(q)}
+              disabled={aiLoading}
+              className="text-xs px-3 py-1.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 hover:text-indigo-200 transition-colors disabled:opacity-50"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
 
       {aiLoading && (
         <div className="card p-8 mt-4 text-center">

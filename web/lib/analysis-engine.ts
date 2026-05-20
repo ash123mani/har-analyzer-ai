@@ -20,30 +20,32 @@ function classifyResourceType(url: string, mime: string): string {
 }
 
 export function analyzeEntries(entries: HarEntry[]): AnalyzedEntry[] {
-  const withMeta: AnalyzedEntry[] = entries.map(e => {
-    let hostname = '';
-    let pathname = '';
-    let reqUrl = '';
-    try {
-      reqUrl = e.request.url || '';
-      const u = new URL(reqUrl);
-      hostname = u.hostname;
-      pathname = u.pathname;
-    } catch {
-      /* invalid URL */
-    }
-    const ct = (e.response?.content?.mimeType) || '';
-    const rt = classifyResourceType(reqUrl, ct);
-    return {
-      ...e,
-      resourceType: rt,
-      hostname,
-      pathname,
-      ttfb: safeTiming(e.timings?.wait),
-      isBlocking: rt === 'document' || rt === 'stylesheet',
-      service: null,
-    };
-  });
+  const withMeta: AnalyzedEntry[] = entries
+    .filter((e): e is HarEntry => e != null)
+    .map(e => {
+      let hostname = '';
+      let pathname = '';
+      let reqUrl = '';
+      try {
+        reqUrl = (e.request?.url) || '';
+        const u = new URL(reqUrl);
+        hostname = u.hostname;
+        pathname = u.pathname;
+      } catch {
+        /* invalid URL */
+      }
+      const ct = (e.response?.content?.mimeType) || '';
+      const rt = classifyResourceType(reqUrl, ct);
+      return {
+        ...e,
+        resourceType: rt,
+        hostname,
+        pathname,
+        ttfb: safeTiming(e.timings?.wait),
+        isBlocking: rt === 'document' || rt === 'stylesheet',
+        service: null,
+      };
+    });
   return tagEntries(withMeta);
 }
 

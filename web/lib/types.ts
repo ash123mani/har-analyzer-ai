@@ -79,6 +79,27 @@ export interface Bottleneck {
   suggestion: string;
 }
 
+export interface SecurityFinding {
+  severity: 'high' | 'medium' | 'low';
+  category: string;
+  title: string;
+  detail: string;
+  suggestion: string;
+}
+
+export interface CategoryScore {
+  label: string;
+  score: number;
+  icon: string;
+  detail: string;
+}
+
+export interface RequestFlag {
+  type: 'cors' | 'content-type' | 'status' | 'timing';
+  severity: 'high' | 'medium' | 'low';
+  message: string;
+}
+
 export interface HarFile {
   log: {
     entries: HarEntry[];

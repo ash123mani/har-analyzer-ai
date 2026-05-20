@@ -1,23 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Bottleneck } from '@/lib/types';
 
 interface IssuesTabProps {
   bottlenecks: Bottleneck[];
 }
 
-const SEV_ICON: Record<string, string> = { high: '\u{1F534}', medium: '\u{1F7E1}', low: '\u{1F7E2}' };
-const LIGHTBULB = '\u{1F4A1}';
+const SEV_ICON: Record<string, string> = { high: '\uD83D\uDD34', medium: '\uD83D\uDFE1', low: '\uD83D\uDFE2' };
+const LIGHTBULB = '\uD83D\uDCA1';
 
 export default function IssuesTab({ bottlenecks }: IssuesTabProps) {
-  const [expanded, setExpanded] = useState<number | null>(
-    bottlenecks.filter(b => b.severity === 'high').length > 0
-      ? bottlenecks.findIndex(b => b.severity === 'high')
-      : null,
-  );
+  const [aiIssues, setAiIssues] = useState<Bottleneck[]>([]);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
-  if (bottlenecks.length === 0) {
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ai-bottlenecks') || '[]');
+      setAiIssues(stored);
+    } catch { /* ignore */ }
+
+    function handleIssues(e: Event) {
+      setAiIssues((e as CustomEvent).detail || []);
+    }
+    window.addEventListener('ai-issues-updated', handleIssues);
+    return () => window.removeEventListener('ai-issues-updated', handleIssues);
+  }, []);
+
+  const allIssues = [...bottlenecks, ...aiIssues];
+  const sorted = [...allIssues].sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[a.severity] - order[b.severity];
+  });
+
+  useEffect(() => {
+    if (sorted.length > 0 && expanded === null) {
+      const firstHigh = sorted.findIndex(b => b.severity === 'high');
+      setExpanded(firstHigh >= 0 ? firstHigh : 0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sorted.length]);
+
+  if (sorted.length === 0) {
     return (
       <div className="card p-10 text-center">
         <div className="text-4xl mb-3">\u2705</div>
@@ -29,14 +53,19 @@ export default function IssuesTab({ bottlenecks }: IssuesTabProps) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4">
         <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Issues Found</h3>
         <span className="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-lg">
-          {bottlenecks.length}
+          {sorted.length}
         </span>
+        {aiIssues.length > 0 && (
+          <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-lg">
+            {aiIssues.length} from AI
+          </span>
+        )}
       </div>
 
-      {bottlenecks.map((b, i) => (
+      {sorted.map((b, i) => (
         <div
           key={i}
           onClick={() => setExpanded(expanded === i ? null : i)}
@@ -49,6 +78,9 @@ export default function IssuesTab({ bottlenecks }: IssuesTabProps) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="text-sm font-semibold text-slate-100">{b.title}</h4>
                   <span className={`badge-${b.severity} text-[10px]`}>{b.severity.toUpperCase()}</span>
+                  {aiIssues.includes(b) && (
+                    <span className="text-[9px] font-semibold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">AI</span>
+                  )}
                 </div>
                 <p className="text-sm text-slate-400 mt-1.5">{b.detail}</p>
               </div>

@@ -25,18 +25,75 @@ export function findSerialChains(waterfall: AnalyzedEntry[]): SerialChain[] {
   for (let i = 1; i < waterfall.length; i++) {
     const prev = waterfall[i - 1];
     const curr = waterfall[i];
+    if (!prev || !curr) {
+      if (current.length >= 3) chains.push({ host: waterfall[current[0]]?.hostname || '?', indices: [...current] });
+      current = [];
+      continue;
+    }
     const prevEnd = new Date(prev.startedDateTime).getTime() + (prev.time || 0);
     const currStart = new Date(curr.startedDateTime).getTime();
     if (prev.hostname === curr.hostname && prevEnd > 0 && currStart >= prevEnd) {
       if (current.length === 0) current = [i - 1, i];
       else current.push(i);
     } else {
-      if (current.length >= 3) chains.push({ host: waterfall[current[0]].hostname, indices: [...current] });
+      if (current.length >= 3) chains.push({ host: waterfall[current[0]]?.hostname || '?', indices: [...current] });
       current = [];
     }
   }
-  if (current.length >= 3) chains.push({ host: waterfall[current[0]].hostname, indices: [...current] });
+  if (current.length >= 3) chains.push({ host: waterfall[current[0]]?.hostname || '?', indices: [...current] });
   return chains;
+}
+
+export function filterRelevantEntries(entries: AnalyzedEntry[], metrics: Metrics): {
+  kept: AnalyzedEntry[];
+  filtered: { total: number; slow: number; failed: number; large: number; blocking: number; duplicates: number };
+} {
+  const seenPaths = new Set<string>();
+  const duplicates: AnalyzedEntry[] = [];
+  const unique: AnalyzedEntry[] = [];
+  const valid = entries.filter(e => e != null);
+
+  for (const e of valid) {
+    const path = `${e.hostname || ''}${e.pathname || ''}`;
+    if (seenPaths.has(path)) {
+      duplicates.push(e);
+    } else {
+      seenPaths.add(path);
+      unique.push(e);
+    }
+  }
+
+  const slow = valid.filter(e => (e.time || 0) > 500);
+  const failed = valid.filter(e => e.response.status && (e.response.status >= 400 || e.response.status < 200));
+  const large = valid.filter(e => (e.response?.content?.size || 0) > 100000);
+  const blocking = valid.filter(e => e.isBlocking);
+
+  const combined = new Set<AnalyzedEntry>();
+  for (const e of [...slow, ...failed, ...large, ...blocking, ...duplicates]) combined.add(e);
+
+  const kept = [...combined].sort(
+    (a, b) => new Date(a.startedDateTime).getTime() - new Date(b.startedDateTime).getTime(),
+  );
+
+  if (kept.length < 10 && valid.length > 10) {
+    const remaining = valid
+      .filter(e => !combined.has(e))
+      .sort((a, b) => (b.time || 0) - (a.time || 0))
+      .slice(0, 10 - kept.length);
+    for (const e of remaining) kept.push(e);
+  }
+
+  return {
+    kept,
+    filtered: {
+      total: valid.length,
+      slow: slow.length,
+      failed: failed.length,
+      large: large.length,
+      blocking: blocking.length,
+      duplicates: duplicates.length,
+    },
+  };
 }
 
 export function buildPrompt(
@@ -45,7 +102,8 @@ export function buildPrompt(
   bottlenecks: Bottleneck[] | null,
   custom: string,
 ): string {
-  const firstStart = entries.length > 0 ? new Date(entries[0].startedDateTime).getTime() : 0;
+  const { kept, filtered } = filterRelevantEntries(entries, metrics);
+  const firstStart = kept.length > 0 ? new Date(kept[0].startedDateTime).getTime() : 0;
   const waterfall = metrics.waterfall || [];
 
   interface TimelineEntry extends AnalyzedEntry {
@@ -54,10 +112,11 @@ export function buildPrompt(
     index: number;
   }
 
-  const timeline: TimelineEntry[] = waterfall.map((e, i) => {
-    const start = new Date(e.startedDateTime).getTime();
+  const timeline: TimelineEntry[] = kept.map((e, i) => {
+    const rawStart = e?.startedDateTime;
+    const start = rawStart ? new Date(rawStart).getTime() : firstStart;
     const relStart = Math.max(0, start - firstStart);
-    const end = relStart + (e.time || 0);
+    const end = relStart + (e?.time || 0);
     return { ...e, relStart, end, index: i };
   });
 
@@ -73,13 +132,22 @@ export function buildPrompt(
   if (metrics.onContentLoad !== undefined) text += `- DOM Content Loaded: ${fmtMs(metrics.onContentLoad)}\n`;
   if (metrics.onLoad !== undefined) text += `- On Load (all resources): ${fmtMs(metrics.onLoad)}\n`;
 
+  text += '\n## Entry Filtering\n';
+  text += `Showing ${kept.length} relevant entries out of ${filtered.total} total (to stay under token limits):\n`;
+  text += `- Slow (>500ms): ${filtered.slow}\n`;
+  text += `- Failed (4xx/5xx): ${filtered.failed}\n`;
+  text += `- Large payloads (>100KB): ${filtered.large}\n`;
+  text += `- Render-blocking: ${filtered.blocking}\n`;
+  if (filtered.duplicates > 0) text += `- Duplicate calls to same path: ${filtered.duplicates}\n`;
+
   text += '\n## Waterfall Timeline (dependency order)\n';
   text += 'Format: [start\u2192end] METHOD url (type, size) \u2014 host \u2014 service \u2014 flags\n';
   text += `First request = +0ms. Total = ${fmtMs(metrics.totalTime)}.\n`;
   text += 'RENDER_BLOCKING resources delay first paint \u2014 highest priority.\n\n';
 
   for (const e of timeline) {
-    const url = e.request?.url || '';
+    if (!e?.request?.url) continue
+    const url = e.request.url;
     const method = e.request?.method || '?';
     const size = e.response?.content?.size || 0;
     const label = url.length > 80 ? url.slice(0, 77) + '\u2026' : url;
@@ -92,9 +160,10 @@ export function buildPrompt(
     text += '\n### Serial Request Chains (HTTP/1.1 bottleneck \u2014 requests wait for previous to finish)\n';
     for (const chain of serialChains) {
       const names = chain.indices.map(i => {
-        const e = timeline[i];
-        const fname = e.request?.url?.split('/').pop() || '';
-        return `#${i} (${fname || e.request.url})`;
+        const e = waterfall[i];
+        if (!e?.request?.url) return `#${i} (unknown)`;
+        const fname = e.request.url.split('/').pop() || '';
+        return `#${i} (${fname})`;
       }).join(' \u2192 ');
       text += `- Host ${chain.host}: ${names}\n`;
       text += '  Fix: enable HTTP/2 multiplexing or parallelize resource loads\n';

@@ -8,6 +8,8 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'issues', label: 'Issues', icon: '\u26A0' },
+  { id: 'security', label: 'Security', icon: '\uD83D\uDD12' },
+  { id: 'thirdparty', label: '3rd Party', icon: '\uD83C\uDF10' },
   { id: 'resources', label: 'Resources', icon: '\u2630' },
   { id: 'timing', label: 'Timing', icon: '\u23F1' },
   { id: 'ai', label: 'AI Analysis', icon: '\u2728' },
